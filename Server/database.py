@@ -69,6 +69,14 @@ class Database:
         return len(result) > 0
 
     def saveNewClient(self, id, name):
-        if not id or len(id) != ID_LENGTH:
+        idbytes = bytes.fromhex(id)
+        if not idbytes or len(idbytes) != ID_LENGTH:
             return False
-        return self.executeQuery(f"INSERT INTO {Database.CLIENTS_TABLE} (ID, Name) VALUES (?, ?)", [id, name], True)
+        if not name or len(name) != NAME_LENGTH:
+            return False
+        return self.executeQuery(f"INSERT INTO {Database.CLIENTS_TABLE} (ID, Name) VALUES (?, ?)", [idbytes, name], True)
+
+    def setPublicKey(self, id, key):
+        if not key or len(key) != PUBLIC_KEY_SIZE:
+            return False
+        return self.executeQuery(f"UPDATE {Database.CLIENTS_TABLE} SET PublicKey = ? WHERE ID = ?", [key, id])

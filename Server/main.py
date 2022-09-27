@@ -13,10 +13,10 @@ CODE_REQ_FILE = 1103
 CODE_REQ_CRC_VALID = 1104
 CODE_REQ_CRC_RETRY = 1105
 CODE_REQ_CRC_FAIL = 1106
-CODE_REGISTER = 2100
-CODE_AES = 2102
-CODE_FILE_CRC = 2103
-CODE_MESSAGE = 2104
+CODE_RES_REGISTER = 2100
+CODE_RES_AES = 2102
+CODE_RES_FILE_CRC = 2103
+CODE_RES_MESSAGE = 2104
 CODE_ERROR = -1
 RESPONSE_HEADER_SIZE = 7
 REQUEST_HEADER_SIZE = 23
@@ -39,6 +39,32 @@ class ResponseHeader:
             return b""
 
 
+class RegisterResponse:
+    def __init__(self):
+        self.header = ResponseHeader(CODE_RES_REGISTER)
+        self.clientId = b""
+
+    def pack(self):
+        try:
+            data = self.header.pack()
+            data += struct.pack(f"<{UUID_SIZE}s", self.clientId)
+            return data
+        except Exception as e:
+            print(f"Exception when packing registration response: {e}")
+            return b""
+
+class PublicKeyResponse:
+    def __init__(self):
+        self.header = ResponseHeader(CODE_RES_AES)
+        self.clientId = b""
+        self.aesKey = b""
+
+    def pack(self):
+        try:
+            data = self.header.pack()
+            data += struct.pack()
+
+
 class RequestHeader:
     def __init__(self):
         self.id = 0
@@ -48,9 +74,8 @@ class RequestHeader:
 
     def unpack(self, data):
         try:
-            #self.id = uuid.UUID(bytes_le=data[:UUID_SIZE])
             self.id = struct.unpack(f"<{UUID_SIZE}s", data[:UUID_SIZE])[0]
-            self.version, self.code, self.payloadsize = struct.unpack("<BHL", data[UUID_SIZE:REQUEST_HEADER_SIZE + UUID_SIZE])
+            self.version, self.code, self.payloadsize = struct.unpack("<BHL", data[UUID_SIZE:REQUEST_HEADER_SIZE])
             return True
         except Exception as e:
             print(f"Exception when parsing the request: {e}")
@@ -69,6 +94,23 @@ class RegisterRequest:
         except Exception as e:
             print(f"Exception when parsing client name: {e}")
             self.name = b""
+            return False
+
+class PublicKeyRequest:
+    def __init__(self, reqHeader):
+        self.reqHeader = reqHeader
+        self.name = b""
+        self.publicKey = b""
+
+    def unpack(self, payload):
+        try:
+            self.name = str(struct.unpack(f"<{NAME_SIZE}s", payload[:NAME_SIZE])[0].partition(b'\0')[0].decode("utf-8"))
+            self.publicKey = struct.unpack(f"<{database.PUBLIC_KEY_SIZE}s", payload[NAME_SIZE:NAME_SIZE+database.PUBLIC_KEY_SIZE])[0]
+            return True
+        except Exception as e:
+            print(f"Exception when trying to unpack public key request: {e}")
+            self.name = b""
+            self.publicKey = b""
             return False
 
 
@@ -156,12 +198,29 @@ class Server:
         print(f"Response sent to {conn}")
         return True
 
-    def registerClient(self, conn, header, paylaod):
-        pass
+    def registerClient(self, conn, header, payload):
+        req = RegisterRequest(header)
+        res = RegisterResponse()
+        if not req.unpack(payload):
+            return False
+        try:
+            if self.db.usernameExists(req.name):
+                print(f"Client registration failure: user name {req.name} already exists")
+                return False
+        except:
+            print(f"Client registration failure: failed to connect to the database")
+            return False
+        if not self.db.saveNewClient(uuid.uuid4().hex, req.name):
+            print(f"Client registration failure: client {req.name} couldn't be stored")
+            return False
+        print(f"Client {req.name} stored in the data base")
+        res.clientId = req.reqHeader.id
+        res.header.payloadsize = UUID_SIZE
+        return self.sendData(conn, res.pack())
 
-    def handleRequest(self, req):
-        if req.code in self.requests.keys():
-            self.requests[req.code](conn, req)
+    def handlePublicKey(self, conn, header, payload):
+        req = PublicKeyRequest(header)
+        res = PublicKeyResponse()
 
 
 def getPort(filename):
