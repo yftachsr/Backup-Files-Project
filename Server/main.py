@@ -22,6 +22,8 @@ RESPONSE_HEADER_SIZE = 7
 REQUEST_HEADER_SIZE = 23
 UUID_SIZE = 16
 SERVER_VERSION = 3
+NAME_SIZE = 255
+
 
 class ResponseHeader:
     def __init__(self, code):
@@ -54,9 +56,26 @@ class RequestHeader:
             print(f"Exception when parsing the request: {e}")
             return False
 
+
+class RegisterRequest:
+    def __init__(self, reqHeader):
+        self.reqHeader = reqHeader
+        self.name = b""
+
+    def unpack(self, payload):
+        try:
+            self.name = str(struct.unpack(f"<{NAME_SIZE}s", payload)[0].partition(b'\0')[0].decode('utf-8'))
+            return True
+        except Exception as e:
+            print(f"Exception when parsing client name: {e}")
+            self.name = b""
+            return False
+
+
 class Server:
     DBNAME = "server.db"
     MAX_QUEUE = 5
+
     def __init__(self, port):
         self.port = port
         self.db = database.Database(Server.DBNAME)
@@ -97,10 +116,18 @@ class Server:
     def receiveData(self, conn, mask):
         print("Client connected")
         data = conn.recv(PACKET_SIZE)
+        readenBytes = PACKET_SIZE
         if data:
             reqHeader = RequestHeader()
             success = False
             if reqHeader.unpack(data):
+                reqSize = REQUEST_HEADER_SIZE + reqHeader.payloadsize
+                while readenBytes < reqSize: # Read the rest of the request
+                    bytesNum = PACKET_SIZE
+                    if PACKET_SIZE > reqSize - readenBytes: # The number of bytes left is less than a packet
+                        bytesNum = reqSize - readenBytes
+                    data += conn.recv(bytesNum)
+                    readenBytes += bytesNum
                 if reqHeader.code in self.requests.keys():
                     success = self.requests[reqHeader.code](conn, reqHeader, data[REQUEST_HEADER_SIZE:])
             if not success:
@@ -130,7 +157,7 @@ class Server:
         return True
 
     def registerClient(self, conn, header, paylaod):
-        return False
+        pass
 
     def handleRequest(self, req):
         if req.code in self.requests.keys():
