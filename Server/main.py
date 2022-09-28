@@ -4,6 +4,11 @@ import database
 import selectors
 from datetime import datetime
 import uuid
+import Crypto.Cipher
+import Crypto.Random
+import Crypto.Cipher.AES
+from Crypto.Cipher import PKCS1_OAEP
+import os
 
 PORT_FILE = "port.info"
 PACKET_SIZE = 1024
@@ -23,6 +28,9 @@ REQUEST_HEADER_SIZE = 23
 UUID_SIZE = 16
 SERVER_VERSION = 3
 NAME_SIZE = 255
+CONTENT_SIZE = 4
+CRC_SIZE = 4
+AES_KEY_LENGTH = 16
 
 
 class ResponseHeader:
@@ -53,6 +61,7 @@ class RegisterResponse:
             print(f"Exception when packing registration response: {e}")
             return b""
 
+
 class PublicKeyResponse:
     def __init__(self):
         self.header = ResponseHeader(CODE_RES_AES)
@@ -62,12 +71,36 @@ class PublicKeyResponse:
     def pack(self):
         try:
             data = self.header.pack()
-            data += struct.pack()
+            data += struct.pack(f"<{UUID_SIZE}s", self.clientId)
+            data += struct.pack(f"<{len(self.aesKey)}s", self.aesKey)
+            return data
+        except Exception as e:
+            print(f"Exception when trying to pack public key response: {e}")
+            return b""
+
+
+class FileResponse:  # Didn't include Content Size because it makes no sense
+    def __init__(self):
+        self.header = ResponseHeader(CODE_RES_FILE_CRC)
+        self.clientId = b""
+        self.fileName = b""
+        self.Cksum = b""
+
+    def pack(self):
+        try:
+            data = self.header.pack()
+            data += struct.pack(f"<{UUID_SIZE}s", self.clientId)
+            data += struct.pack(f"<{NAME_SIZE}s", self.fileName)
+            data += struct.pack(f"<{CRC_SIZE}s", self.Cksum)
+            return True
+        except Exception as e:
+            print(f"Exception when trying to pack file response: {e}")
+            return False
 
 
 class RequestHeader:
     def __init__(self):
-        self.id = 0
+        self.id = b""
         self.version = 0
         self.code = 0
         self.payloadsize = 0
@@ -96,6 +129,7 @@ class RegisterRequest:
             self.name = b""
             return False
 
+
 class PublicKeyRequest:
     def __init__(self, reqHeader):
         self.reqHeader = reqHeader
@@ -105,12 +139,34 @@ class PublicKeyRequest:
     def unpack(self, payload):
         try:
             self.name = str(struct.unpack(f"<{NAME_SIZE}s", payload[:NAME_SIZE])[0].partition(b'\0')[0].decode("utf-8"))
-            self.publicKey = struct.unpack(f"<{database.PUBLIC_KEY_SIZE}s", payload[NAME_SIZE:NAME_SIZE+database.PUBLIC_KEY_SIZE])[0]
+            self.publicKey = struct.unpack(f"<{database.PUBLIC_KEY_SIZE}s", payload[NAME_SIZE:NAME_SIZE + database.PUBLIC_KEY_SIZE])[0]
             return True
         except Exception as e:
             print(f"Exception when trying to unpack public key request: {e}")
             self.name = b""
             self.publicKey = b""
+            return False
+
+
+class FileRequest:
+    def __init__(self, reqHeader):
+        self.reqHeader = reqHeader
+        self.contentSize = 0
+        self.fileName = 0
+        self.message = b""
+
+    def unpack(self, data):
+        try:
+            self.contentSize = struct.unpack("<L", data[:CONTENT_SIZE])[0]
+            self.fileName = str(struct.unpack(f"<{NAME_SIZE}s", data[CONTENT_SIZE:CONTENT_SIZE+NAME_SIZE])[0]
+                                .partition(b'\0')[0].decode("utf-8"))
+            self.message = struct.unpack(f"<{self.fileName}s", data[CONTENT_SIZE+NAME_SIZE:])[0]
+            return True
+        except Exception as e:
+            print(f"Exception when trying to unpack file request: {e}")
+            self.contentSize = 0
+            self.fileName = 0
+            self.message = b""
             return False
 
 
@@ -164,9 +220,9 @@ class Server:
             success = False
             if reqHeader.unpack(data):
                 reqSize = REQUEST_HEADER_SIZE + reqHeader.payloadsize
-                while readenBytes < reqSize: # Read the rest of the request
+                while readenBytes < reqSize:  # Read the rest of the request
                     bytesNum = PACKET_SIZE
-                    if PACKET_SIZE > reqSize - readenBytes: # The number of bytes left is less than a packet
+                    if PACKET_SIZE > reqSize - readenBytes:  # The number of bytes left is less than a packet
                         bytesNum = reqSize - readenBytes
                     data += conn.recv(bytesNum)
                     readenBytes += bytesNum
@@ -198,14 +254,31 @@ class Server:
         print(f"Response sent to {conn}")
         return True
 
+    def saveFile(self, name,filename, content):
+        try:
+            os.mkdir(f"{name}\\")
+            return True
+        except FileExistsError:
+            pass
+        except:
+            return False
+        try:
+            f = open(f"{name}\\{filename}", "w+b")
+            f.write(content)
+            return True
+        except Exception as e:
+            return False
+
     def registerClient(self, conn, header, payload):
         req = RegisterRequest(header)
         res = RegisterResponse()
         if not req.unpack(payload):
             return False
         try:
+            if not req.name.isalnum():
+                print(f"Client registration failure: username {req.name} is invalid")
             if self.db.usernameExists(req.name):
-                print(f"Client registration failure: user name {req.name} already exists")
+                print(f"Client registration failure: username {req.name} already exists")
                 return False
         except:
             print(f"Client registration failure: failed to connect to the database")
@@ -218,9 +291,48 @@ class Server:
         res.header.payloadsize = UUID_SIZE
         return self.sendData(conn, res.pack())
 
+    def generateAndEncryptAES(self, id, publicKey):
+        key = Crypto.Random.get_random_bytes(AES_KEY_LENGTH)  # Generate AES key
+        if not self.db.setAESKey(id, key):  # Save the AES key in the database
+            print("Couldn't save the AES key in the database")
+            return False
+        cipher = PKCS1_OAEP.new(publicKey)  # Encrypt the AES key with the clients public key
+        return cipher.encrypt(key)
+
     def handlePublicKey(self, conn, header, payload):
         req = PublicKeyRequest(header)
         res = PublicKeyResponse()
+        if not req.unpack(payload):
+            return False
+        if not self.db.setPublicKey(req.reqHeader.id, req.publicKey):
+            print(f"Public key failure: public key key couldn't be stored for client {req.name}")
+            return False
+        print(f"Public key stored for client {req.name}")
+        res.clientId = req.reqHeader.id
+        aeskey = self.generateAndEncryptAES(req.reqHeader.id, req.publicKey)
+        if not aeskey:
+            return False
+        res.aesKey = aeskey
+        res.header.payloadsize = UUID_SIZE + len(aeskey)
+        return self.sendData(conn, res.pack())
+
+    def handleFile(self, conn, header, payload):
+        req = FileRequest(header)
+        res = FileResponse()
+        if not req.unpack(payload):
+            return False
+        aeskey = self.db.getAESKey(req.reqHeader.id)
+        cipher = Crypto.Cipher.AES.new(aeskey, Crypto.Cipher.AES.MODE_CBC, iv=b'\0'*16)
+        clientname = self.db.getClientName(req.reqHeader.id)
+        if not self.saveFile(clientname, req.fileName, cipher.decrypt(req.message)):
+            print(f"File save error: file {req.fileName} for client {req.reqHeader.id} couldn't be saved")
+            return False
+        if not self.db.saveFile(req.reqHeader.id, req.fileName, f"{clientname}\\{req.fileName}", 0):
+            print(f"File save error: file {req.fileName} for client {req.reqHeader.id} couldn't be saved in the database")
+            return False
+
+        # TO DO Calculate CRC and send to client
+
 
 
 def getPort(filename):

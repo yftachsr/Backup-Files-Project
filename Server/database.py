@@ -79,4 +79,16 @@ class Database:
     def setPublicKey(self, id, key):
         if not key or len(key) != PUBLIC_KEY_SIZE:
             return False
-        return self.executeQuery(f"UPDATE {Database.CLIENTS_TABLE} SET PublicKey = ? WHERE ID = ?", [key, id])
+        return self.executeQuery(f"UPDATE {Database.CLIENTS_TABLE} SET PublicKey = ? WHERE ID = ?", [key, id], True)
+
+    def setAESKey(self, id, key):
+        return self.executeQuery(f"UPDATE {Database.CLIENTS_TABLE} SET AESKey = ? WHERE ID = ?", [key, id], True)
+
+    def getAESKey(self, id):
+        return self.executeQuery(f"SELECT AESKey FROM {Database.CLIENTS_TABLE} WHERE ID = ?", [id])
+
+    def getClientName(self, id):
+        return self.executeQuery(f"SELECT Name FROM {Database.CLIENTS_TABLE} WHERE ID = ?", [id])
+
+    def saveFile(self, id, filename, path, verified):
+        return self.executeQuery(f"INSERT INTO {Database.FILES_TABLE} VALUES (?,?,?,?)", [id, filename, path, verified], True)
