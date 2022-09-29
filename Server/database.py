@@ -3,7 +3,7 @@ import sqlite3
 ID_LENGTH = 16
 NAME_LENGTH = 127
 PUBLIC_KEY_SIZE = 160
-AES_LENGTH = 32 #256/8
+AES_LENGTH = 32  # 256/8
 FILE_NAME_LENGTH = 255
 PATH_NAME_LENGTH = 255
 
@@ -26,14 +26,15 @@ class Database:
 
         self.executeScript(f"""
             CREATE TABLE {Database.FILES_TABLE}(
-                ID TEXT NOT NULL PRIMARY KEY,
+                ID TEXT NOT NULL,
                 FileName TEXT NOT NULL,
                 PathName TEXT NOT NULL,
-                Verified INTEGER, 
+                Verified INTEGER,
+                PRIMARY KEY (ID, FileName) 
         """)
 
     def connect(self):
-        conn = sqlite3.connet(self.name)
+        conn = sqlite3.connect(self.name)
         conn.text_factory = bytes
         return conn
 
@@ -51,7 +52,7 @@ class Database:
         conn = self.connect()
         try:
             cur = conn.cursor()
-            cur.execut(query, args)
+            cur.execute(query, args)
             if commit:
                 conn.commit()
                 result = True
@@ -74,7 +75,8 @@ class Database:
             return False
         if not name or len(name) != NAME_LENGTH:
             return False
-        return self.executeQuery(f"INSERT INTO {Database.CLIENTS_TABLE} (ID, Name) VALUES (?, ?)", [idbytes, name], True)
+        return self.executeQuery(f"INSERT INTO {Database.CLIENTS_TABLE} (ID, Name) VALUES (?, ?)", [idbytes, name],
+                                 True)
 
     def setPublicKey(self, id, key):
         if not key or len(key) != PUBLIC_KEY_SIZE:
@@ -91,4 +93,15 @@ class Database:
         return self.executeQuery(f"SELECT Name FROM {Database.CLIENTS_TABLE} WHERE ID = ?", [id])
 
     def saveFile(self, id, filename, path, verified):
-        return self.executeQuery(f"INSERT INTO {Database.FILES_TABLE} VALUES (?,?,?,?)", [id, filename, path, verified], True)
+        return self.executeQuery(f"INSERT INTO {Database.FILES_TABLE} VALUES (?,?,?,?)", [id, filename, path, verified],
+                                 True)
+
+    def deleteFile(self, id, filename):
+        return self.executeQuery(f"DELETE FROM {Database.FILES_TABLE} WHERE ID = ? AND FileName = ?", [id, filename], True)
+
+    def setVerified(self, id, filename, verified):
+        return self.executeQuery(f"UPDATE {Database.FILES_TABLE} SET Verified = ? WHERE ID = ? AND FileName = ?"
+                                 , [verified, id, filename], True)
+
+    def setLastSeen(self, id, time):
+        return self.executeQuery(f"UPDATE {Database.CLIENTS_TABLE} SET LastSeen = ? WHERE ID = ?", [time, id], True)
