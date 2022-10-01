@@ -49,3 +49,14 @@ bool FileHandler::readFromFile(std::fstream& file, uint8_t* buff, uint32_t bytes
 		return false;
 	}
 }
+
+bool FileHandler::readLine(std::fstream& file, std::string& line) {
+	try {
+		if (!std::getline(file, line) || line.empty())
+			return false;
+		return true;
+	}
+	catch (std::exception&) {
+		return false;
+	}
+}
