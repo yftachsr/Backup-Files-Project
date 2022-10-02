@@ -4,6 +4,9 @@
 #include "Protocol.h"
 #include "FileHandler.h"
 #include "Networking.h"
+#include "Base64Wrapper.h"
+#include "RSAWrapper.h"
+#include "AESWrapper.h"
 
 #define INFO_FILE "me.info"
 #define TRANSFER_FILE "transfer.info"
@@ -13,15 +16,18 @@ class Client
 	uint8_t clientID[UUID_SIZE];
 	std::string username;
 	std::string filePath;
-	uint8_t publicKey[PUBLICKEY_SIZE];
+	uint8_t publicKey[PUBLIC_KEY_SIZE];
+	std::string privateKey;
 	uint8_t aesKey[AESKEY_SIZE];
 	FileHandler fileHandler;
 	Networking net;
 	Client();
-	void clientProcedure();
 	bool registerRequest();
 	bool start();
 	bool parseTransferInfo();
 	bool extractIPPort(std::string, std::string&, uint16_t&);
+	bool validateHeader(const ResponseHeader&, const size_t);
+	bool sendPublicKey();
+	bool receiveResponse(const size_t, uint8_t*&, size_t&);
 };
 

@@ -334,7 +334,7 @@ class Server:
         if not req.unpack(payload):
             return False
         if not self.db.setPublicKey(req.header.id, req.publicKey):
-            print(f"Public key failure: public key key couldn't be stored for client {req.name}")
+            print(f"Public key failure: public key couldn't be stored for client {req.name}")
             return False
         print(f"Public key stored for client {req.name}")
         res.clientId = req.header.id
