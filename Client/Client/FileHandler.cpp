@@ -39,6 +39,23 @@ bool FileHandler::writeToFile(std::fstream& file, const uint8_t* payload,
 	return true;
 }
 
+bool FileHandler::writeHex(std::fstream& file, const unsigned char* buffer, unsigned int length) {
+
+	try {
+		std::ios::fmtflags f(file.flags());
+		file << std::hex;
+		for (size_t i = 0; i < length; i++)
+			file << std::setfill('0') << std::setw(2) << (0xFF & buffer[i]);
+		file << std::endl;
+		file.flags(f);
+	}
+	catch (std::exception&) {
+		return false;
+	}
+	return true;
+}
+
+
 bool FileHandler::readFromFile(std::fstream& file, uint8_t* buff, uint32_t bytes) {
 
 	try {

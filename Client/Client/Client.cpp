@@ -9,12 +9,21 @@ bool Client::start() {
 	if (!parseTransferInfo())
 		return false;
 	bool infoExists = fileHandler.fileExists(INFO_FILE);
-	if (!infoExists)
-		registerRequest();
-	else
-		parseClientInfo();
 
-	sendPublicKey();
+	if (!net.connectToServer())
+		return false;
+	
+	if (!infoExists) {
+		if (!registerRequest())
+			return false;
+	}	
+	else {
+		if (!parseClientInfo())
+			return false;
+	}
+		
+	if (!sendPublicKey())
+		return false;
 	
 	if(!infoExists)
 		saveClientInfo(); // By now we have all the information needed to save on the disk
@@ -165,14 +174,30 @@ bool Client::sendPublicKey() {
 		return false;
 	}
 
+	uint8_t* payload;
+	uint32_t payloadSize;
+	if (!receiveResponse(CODE_RES_AES, payload, payloadSize))
+		return false;
+	memcpy(&res.clientID, payload, UUID_SIZE);
+	if (!validateId(res.clientID)) {
+		std::cerr << "Received incorrect id from server: \n";
+		hexify(reinterpret_cast<const unsigned char*>(res.clientID), sizeof(res.clientID));
+		return false;
+	}
+	payload += UUID_SIZE;
+	res.encryptedAES = new uint8_t[payloadSize - UUID_SIZE];
+	memcpy(&res.encryptedAES, payload, sizeof(res.encryptedAES));
+	std::string aesKeystr = rsapriv.decrypt(reinterpret_cast<const char*>(res.encryptedAES)
+		, sizeof(res.encryptedAES)); // Decrypt aes key
+	memcpy(aesKey, aesKeystr.c_str(), aesKeystr.size());
 
-
+	delete[] payload;
 
 	return true;
 }
 
 bool Client::receiveResponse(const size_t expectedCode, 
-	uint8_t*& payload,size_t& payloadSize) {
+	uint8_t*& payload,uint32_t& payloadSize) {
 
 	ResponseHeader header;
 	payload = nullptr;
@@ -184,6 +209,110 @@ bool Client::receiveResponse(const size_t expectedCode,
 	}
 
 	memcpy(&header, buff, sizeof(ResponseHeader));
-
+	if (!validateHeader(header, expectedCode)) 
+		return false;
 	
+	if (header.payloadsize = 0)
+		return true;
+
+	payloadSize = header.payloadsize;
+	payload = new uint8_t[payloadSize];
+	uint8_t* ptr = static_cast<uint8_t*>(buff) + sizeof(header);
+	size_t recvBytes = PACKET_SIZE - sizeof(header);
+	if (recvBytes < payloadSize)
+		recvBytes = payloadSize;
+	memcpy(payload, ptr, recvBytes);
+	ptr = payload + recvBytes;
+	while (recvBytes < payloadSize) {
+		size_t toRead = payloadSize - recvBytes;
+		if (toRead > PACKET_SIZE)
+			toRead = PACKET_SIZE;
+		if (!net.receiveData(buff, toRead)) {
+			std::cerr << "Failed to receive response from server" << std::endl;
+			delete[] payload;
+			payload = nullptr;
+			payloadSize = 0;
+			return false;
+		}
+		memcpy(ptr, buff, toRead);
+		recvBytes += toRead;
+		ptr += toRead;
+	}
+	return true;
+}
+
+bool Client::validateId(uint8_t* id) {
+	for (size_t i = 0; i < UUID_SIZE; i++)
+		if (clientID[i] != id[i])
+			return false;
+	return true;
+}
+
+void Client::hexify(const unsigned char* buffer, unsigned int length) {
+	std::ios::fmtflags f(std::cout.flags());
+	std::cout << std::hex;
+	for (size_t i = 0; i < length; i++)
+		std::cout << std::setfill('0') << std::setw(2) << (0xFF & buffer[i]) << (((i + 1) % 16 == 0) ? "\n" : " ");
+	std::cout << std::endl;
+	std::cout.flags(f);
+}
+
+bool Client::saveClientInfo() {
+
+	std::fstream file;
+	if (!fileHandler.openFile(file, INFO_FILE, true)) {
+		std::cerr << "Failed to open/create info file " << INFO_FILE << std::endl;
+		return false;
+	}
+	std::string name = username.append("\n");
+	if (!fileHandler.writeToFile(file, reinterpret_cast<const uint8_t*>(name.c_str()), name.size())) {
+		std::cerr << "Failed to write to info file " << INFO_FILE << std::endl;
+		return false;
+	}
+
+	if (!fileHandler.writeHex(file, reinterpret_cast
+		<const unsigned char*>(clientID),sizeof(clientID))) {
+		std::cerr << "Failed to write to info file " << INFO_FILE << std::endl;
+		return false;
+	}
+
+	std::string base64key = Base64Wrapper::encode(privateKey);
+	if (!fileHandler.writeToFile(file, reinterpret_cast<const uint8_t*>(base64key.c_str()),base64key.size())) {
+		std::cerr << "Failed to write to info file " << INFO_FILE << std::endl;
+		return false;
+	}
+
+	file.close();
+	return true;
+}
+
+bool Client::parseClientInfo() {
+
+	std::fstream file;
+	if (fileHandler.openFile(file, INFO_FILE, false)) {
+		std::cerr << "Failed to open info file " << INFO_FILE << " for reading" << std::endl;
+		return false;
+ 	}
+	
+	if (fileHandler.readLine(file, username)) {
+		std::cerr << "Failed to read info file " << INFO_FILE << std::endl;
+		return false;
+	}
+
+	std::string id;
+	if (fileHandler.readLine(file, id)) {
+		std::cerr << "Failed to read info file " << INFO_FILE << std::endl;
+		return false;
+	}
+	memcpy(&clientID, id.c_str(), UUID_SIZE);
+
+	std::string key;
+	if(fileHandler.readLine(file, key)) {
+		std::cerr << "Failed to read info file " << INFO_FILE << std::endl;
+		return false;
+	}
+	privateKey = Base64Wrapper::decode(key);
+
+	file.close();
+	return true;
 }

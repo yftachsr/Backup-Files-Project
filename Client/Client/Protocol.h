@@ -66,6 +66,7 @@ struct PublicKeyResponse {
 	ResponseHeader header;
 	uint8_t clientID[UUID_SIZE];
 	uint8_t* encryptedAES;
+	~PublicKeyResponse() { delete[] encryptedAES; }
 };
 
 struct FileResponse {

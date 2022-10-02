@@ -28,6 +28,10 @@ class Client
 	bool extractIPPort(std::string, std::string&, uint16_t&);
 	bool validateHeader(const ResponseHeader&, const size_t);
 	bool sendPublicKey();
-	bool receiveResponse(const size_t, uint8_t*&, size_t&);
+	bool receiveResponse(const size_t, uint8_t*&, uint32_t&);
+	void hexify(const unsigned char*, unsigned int);
+	bool validateId(uint8_t*);
+	bool saveClientInfo();
+	bool parseClientInfo();
 };
 
