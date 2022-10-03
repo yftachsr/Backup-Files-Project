@@ -73,7 +73,7 @@ class Database:
         idbytes = bytes.fromhex(id)
         if not idbytes or len(idbytes) != ID_LENGTH:
             return False
-        if not name or len(name) != NAME_LENGTH:
+        if not name or len(name) >= NAME_LENGTH:
             return False
         return self.executeQuery(f"INSERT INTO {Database.CLIENTS_TABLE} (ID, Name) VALUES (?, ?)", [idbytes, name],
                                  True)

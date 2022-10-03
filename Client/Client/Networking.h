@@ -20,5 +20,6 @@ public:
 	void setIPPort(const std::string&, const uint16_t&);
 	bool sendData(const uint8_t* const, const size_t);
 	bool receiveData(uint8_t* const, const size_t);
+	void disconnetServer();
 };
 

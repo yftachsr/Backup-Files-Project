@@ -1,7 +1,6 @@
-﻿  main.cpp
-C:\Users\yftac\Backup-Files-Project\Client\Client\main.cpp(29,76): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data
-C:\Users\yftac\Backup-Files-Project\Client\Client\main.cpp(31,88): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data
-C:\Users\yftac\Backup-Files-Project\Client\Client\main.cpp(34,79): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data
-C:\Users\yftac\Backup-Files-Project\Client\Client\main.cpp(67,56): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data
-C:\Users\yftac\Backup-Files-Project\Client\Client\main.cpp(78,62): warning C4267: 'argument': conversion from 'size_t' to 'unsigned int', possible loss of data
+﻿  Client.cpp
+C:\Users\yftac\Backup-Files-Project\Client\Client\Client.cpp(97,40): warning C4242: '=': conversion from 'int' to 'uint16_t', possible loss of data
+C:\Users\yftac\Backup-Files-Project\Client\Client\Client.cpp(279,5): warning C4267: 'argument': conversion from 'size_t' to 'const uint32_t', possible loss of data
+C:\Users\yftac\Backup-Files-Project\Client\Client\Client.cpp(291,5): warning C4267: 'argument': conversion from 'size_t' to 'const uint32_t', possible loss of data
+C:\Users\yftac\Backup-Files-Project\Client\Client\Client.cpp(361,47): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
   Client.vcxproj -> C:\Users\yftac\Backup-Files-Project\Client\x64\Debug\Client.exe

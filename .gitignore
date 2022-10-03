@@ -2,3 +2,5 @@
 *.ipch
 Client/cryptopp870/
 Client/.vs/Client/v17/ipch/AutoPCH/8a48411ca50a4c33/CLIENT.ipch
+*.ipch
+Client/.vs/Client/v17/ipch/AutoPCH/8a48411ca50a4c33/CLIENT.ipch

@@ -7,6 +7,7 @@ import uuid
 import Crypto.Cipher
 import Crypto.Random
 import Crypto.Cipher.AES
+import Crypto.Util
 from Crypto.Cipher import PKCS1_OAEP
 import os
 import crc
@@ -223,13 +224,13 @@ class Server:
                 print(f"Server loop exception: {e}")
 
     def accept(self, sock, mask):
+        print("Client connected")
         conn, addr = sock.accept()
         conn.setblocking(False)
         self.sel.register(conn, selectors.EVENT_READ, self.receiveData)
 
     def receiveData(self, conn, mask):
         """Get the data from the client and handle the request accordingly"""
-        print("Client connected")
         data = conn.recv(PACKET_SIZE)
         readenBytes = PACKET_SIZE
         if data:
@@ -294,8 +295,6 @@ class Server:
         if not req.unpack(payload):
             return False
         try:
-            if not req.name.isalnum():
-                print(f"Client registration failure: username {req.name} is invalid")
             if self.db.usernameExists(req.name):
                 print(f"Client registration failure: username {req.name} already exists")
                 return False
@@ -305,7 +304,7 @@ class Server:
         if not self.db.saveNewClient(uuid.uuid4().hex, req.name):
             print(f"Client registration failure: client {req.name} couldn't be stored")
             return False
-        print(f"Client {req.name} stored in the data base")
+        print("Client ", req.name, " stored in the data base")
         res.clientId = req.header.id
         res.header.payloadsize = UUID_SIZE
         return self.sendData(conn, res.pack())
@@ -355,7 +354,8 @@ class Server:
         cipher = Crypto.Cipher.AES.new(aeskey, Crypto.Cipher.AES.MODE_CBC, iv=b'\0'*16)
         clientname = self.db.getClientName(req.header.id)
         filepath = f"{clientname}\\{req.fileName}"
-        if not self.saveFile(clientname, req.fileName, cipher.decrypt(req.message)):  # Save to disk
+
+        if not self.saveFile(clientname, req.fileName, cipher.decrypt(Crypto.Util.Padding.unpad(req.message, 16))):  # Save to disk
             print(f"File save error: file {req.fileName} for client {req.header.id} couldn't be saved")
             return False
         if not self.db.saveFile(req.header.id, req.fileName, filepath, 0):  # Save to the database
@@ -383,27 +383,3 @@ class Server:
                 print(f"CRC error: couldn't delete the corrupted file {req.filename} for client {req.header.id} from the database")
                 return False
             return True
-
-
-
-
-if __name__ == "__main__":
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", getPort(PORT_FILE)))
-        s.listen()
-        conn, addr = s.accept()
-        with conn:
-            print("Connected by ", addr)
-            while True:
-                data = conn.recv(PACKET_SIZE)
-                req = RequestHeader(data)
-                handleRequest(req)
-                text = data.decode("utf-8")
-                print(f"Received message: {text}")
-                print("Enter message ")
-                reply = input()
-                replydata = bytearray(reply, "utf-8")
-                newdata = bytearray(PACKET_SIZE)
-                for i in range(min(len(replydata), len(newdata))):
-                    newdata[i] = replydata[i]
-                conn.sendall(newdata)

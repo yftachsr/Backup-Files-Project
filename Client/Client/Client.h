@@ -1,12 +1,14 @@
 #pragma once
 #include <string>
 #include <iostream>
+#include <filesystem>
 #include "Protocol.h"
 #include "FileHandler.h"
 #include "Networking.h"
 #include "Base64Wrapper.h"
 #include "RSAWrapper.h"
 #include "AESWrapper.h"
+#include "crc.h"
 
 #define INFO_FILE "me.info"
 #define TRANSFER_FILE "transfer.info"
@@ -20,10 +22,8 @@ class Client
 	std::string privateKey;
 	uint8_t aesKey[AESKEY_SIZE];
 	FileHandler fileHandler;
-	Networking net;
-	Client();
-	bool registerRequest();
-	bool start();
+	Networking net;	
+	bool registerRequest();	
 	bool parseTransferInfo();
 	bool extractIPPort(std::string, std::string&, uint16_t&);
 	bool validateHeader(const ResponseHeader&, const size_t);
@@ -33,5 +33,10 @@ class Client
 	bool validateId(uint8_t*);
 	bool saveClientInfo();
 	bool parseClientInfo();
+	bool sendFile();
+public:
+	Client();
+	~Client();
+	bool start();
 };
 

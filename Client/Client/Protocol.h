@@ -59,7 +59,7 @@ struct PublicKeyRequest {
 	RequestHeader header;
 	uint8_t name[NAME_SIZE];
 	uint8_t publicKey[PUBLIC_KEY_SIZE];
-	PublicKeyRequest() : header(CODE_REQ_RES), name{ '\0' }, publicKey{'\0'} {}
+	PublicKeyRequest() : header(CODE_REQ_RES), name{ '\0' }, publicKey{ '\0' } {}
 };
 
 struct PublicKeyResponse {
@@ -69,11 +69,27 @@ struct PublicKeyResponse {
 	~PublicKeyResponse() { delete[] encryptedAES; }
 };
 
+struct FileRequest {
+	RequestHeader header;
+	uint32_t contentSize;
+	uint8_t fileName[NAME_SIZE];
+	uint8_t* message;
+	FileRequest() : header(CODE_REQ_FILE), contentSize(0),
+		fileName{'\0'}, message(nullptr) {}
+	~FileRequest() { delete[] message; }
+};
+
 struct FileResponse {
 	ResponseHeader header;
 	uint8_t clientID[UUID_SIZE];
 	uint8_t fileName[NAME_SIZE];
 	uint32_t cksum;
+};
+
+struct CRCRequest {
+	RequestHeader header;
+	uint8_t fileName[NAME_SIZE];
+	CRCRequest() : header(CODE_REQ_CRC_RETRY), fileName {'\0'} {}
 };
 
 #pragma pack(pop)

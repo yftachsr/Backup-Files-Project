@@ -1,5 +1,5 @@
 #include "main.h"
-
+#include "crc.h"
 #include <iostream>
 #include <iomanip>
 
@@ -80,9 +80,11 @@ int rsa_example()
 
 int main()
 {
-	aes_example();
+	//aes_example();
+	//rsa_example();
 
-	rsa_example();
+	Client c = Client();
+	c.start();
 
 	return 0;
 }

@@ -17,6 +17,7 @@ Networking::Networking() {
 		WSACleanup();
 		terminate();
 	}	
+	
 }
 
 void Networking::setIPPort(const std::string& addr, const uint16_t& port) {
@@ -30,7 +31,8 @@ bool Networking::connectToServer() {
 	ZeroMemory(&sa, sizeof(sa));
 	sa.sin_family = AF_INET;
 	sa.sin_port = htons(port);
-	memcpy(&sa.sin_addr.S_un.S_addr, addr.c_str(), sizeof(sa.sin_addr.S_un.S_addr));
+	//memcpy(&sa.sin_addr.S_un.S_addr, addr.c_str(), sizeof(sa.sin_addr.S_un.S_addr));
+	inet_pton(AF_INET, addr.c_str(), &sa.sin_addr);
 	int ret = connect(sock, (SOCKADDR*)&sa, sizeof(sa));
 	if (ret != 0) {
 		std::cerr << "Failed to connect to server\n" << WSAGetLastError() << std::endl;
@@ -47,7 +49,8 @@ bool Networking::sendData(const uint8_t* const buff, const size_t size) {
 	size_t bytesLeft = size;
 	const uint8_t* ptr = buff;
 	while (bytesLeft > 0) {
-		uint8_t temp[PACKET_SIZE] = {0};
+		uint8_t temp[PACKET_SIZE];
+		memset(temp, '\0', PACKET_SIZE);
 		size_t toSend = (bytesLeft > PACKET_SIZE) ? PACKET_SIZE : bytesLeft;
 		memcpy(temp, ptr, toSend);
 		const size_t sentBytes = send(sock, reinterpret_cast<char*>(temp), PACKET_SIZE, 0);
@@ -75,6 +78,10 @@ bool Networking::receiveData(uint8_t* const buff, const size_t size) {
 		bytesLeft = (bytesLeft < copyBytes) ? 0 : (bytesLeft - copyBytes);
 	}
 	return true;
+}
+
+void Networking::disconnetServer() {
+	closesocket(sock);
 }
 
 
