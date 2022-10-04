@@ -16,7 +16,7 @@ bool Client::start() {
 
 	if (!net.connectToServer())
 		return false;
-	
+
 	if (!infoExists) {
 		if (!registerRequest())
 			return false;
@@ -69,6 +69,7 @@ bool Client::parseTransferInfo() {
 		std::cerr << "Invalid name length" << std::endl;
 		return false;
 	}
+	line.pop_back(); // remove \r
 	username = line;
 
 	// parse file path
@@ -108,25 +109,22 @@ bool Client::registerRequest() {
 	RegisterRequest req = RegisterRequest();
 	RegisterResponse res = RegisterResponse();
 	req.header.payloadSize = NAME_SIZE;
-	std::cout << req.name << std::endl;
 	memcpy(req.name, username.c_str(), NAME_SIZE);
-	//strcpy_s(reinterpret_cast<char*>(req.name), NAME_SIZE, username.c_str());
-	std::cout << req.name << std::endl;
 	if (!net.sendData(reinterpret_cast<const uint8_t* const>(&req), sizeof(req))) {
 		std::cerr << "Failed to send request to server" << std::endl;
 		return false;
 	}
-	std::cout << "235235" << std::endl;
+
 	if (!net.receiveData(reinterpret_cast<uint8_t* const>(&res), sizeof(res))) {
 		std::cerr << "Failed to receive response from server" << std::endl;
 		return false;
 	}
-	std::cout << "658678" << std::endl;
+
 	if (!validateHeader(res.header, CODE_RES_REGISTER))
 		return false;
 
 	memcpy(clientID, res.clientID, UUID_SIZE);
-
+	std::cout << "Client registered in the server with the username: " << req.name << std::endl;
 	return true;
 }
 
@@ -184,26 +182,68 @@ bool Client::sendPublicKey() {
 		std::cerr << "Failed to send request to server" << std::endl;
 		return false;
 	}
-	std::cout << "ggwegwegwegwegweg" << std::endl;
-	uint8_t* payload = nullptr;
-	uint32_t payloadSize;
-	if (!receiveResponse(CODE_RES_AES, payload, payloadSize))
+	std::cout << "Public key was sent to the server" << std::endl;
+	if (!receiveResponse(res))
 		return false;
-	memcpy(res.clientID, payload, UUID_SIZE);
+	
 	if (!validateId(res.clientID)) {
 		std::cerr << "Received incorrect id from server: \n";
 		hexify(reinterpret_cast<const unsigned char*>(res.clientID), sizeof(res.clientID));
 		return false;
 	}
-	payload += UUID_SIZE;
-	res.encryptedAES = new uint8_t[payloadSize - UUID_SIZE];
-	memcpy(res.encryptedAES, payload, payloadSize - UUID_SIZE);
-	std::string aesKeystr = rsapriv.decrypt(reinterpret_cast<const char*>(res.encryptedAES)
-		, sizeof(res.encryptedAES)); // Decrypt aes key
+	std::string aesKeystr;
+
+	aesKeystr = rsapriv.decrypt(reinterpret_cast<const char*>(res.encryptedAES)
+		, res.header.payloadsize - UUID_SIZE); // Decrypt aes key
+	
 	memcpy(aesKey, aesKeystr.c_str(), aesKeystr.size());
+	std::cout << "Symmetric key received from server" << std::endl;
+	return true;
+}
+
+bool Client::receiveResponse(PublicKeyResponse& res) {
+
+	uint8_t buff[PACKET_SIZE];
+
+	if (!net.receiveData(buff, PACKET_SIZE)) {
+		std::cerr << "Failed to receive response from server" << std::endl;
+		return false;
+	}
+	memcpy(&res.header, buff, sizeof(ResponseHeader));
+
+	if (!validateHeader(res.header, CODE_RES_AES))
+		return false;
+
+	if (res.header.payloadsize == 0 || res.header.payloadsize <= UUID_SIZE)
+		return false;
+
+	uint8_t* payload = new uint8_t[res.header.payloadsize];
+	uint8_t* ptr = buff + sizeof(res.header);
+	size_t recvBytes = PACKET_SIZE - sizeof(res.header);
+	if (recvBytes > res.header.payloadsize)
+		recvBytes = res.header.payloadsize;
+	memcpy(payload, ptr, recvBytes);
+	ptr = payload + recvBytes;
+	while (recvBytes < res.header.payloadsize) {
+		size_t toRead = res.header.payloadsize - recvBytes;
+		if (toRead > PACKET_SIZE)
+			toRead = PACKET_SIZE;
+		if (!net.receiveData(buff, toRead)) {
+			std::cerr << "Failed to receive response from server" << std::endl;
+			delete[] payload;
+			return false;
+		}
+		memcpy(ptr, buff, toRead);
+		recvBytes += toRead;
+		ptr += toRead;
+	}
+	ptr = payload;
+	memcpy(res.clientID, ptr, UUID_SIZE);
+	res.encryptedAES = new uint8_t[res.header.payloadsize - UUID_SIZE];
+	ptr += UUID_SIZE;
+	memcpy(res.encryptedAES, ptr, res.header.payloadsize - UUID_SIZE);
 
 	delete[] payload;
-
 	return true;
 }
 
@@ -211,7 +251,6 @@ bool Client::receiveResponse(const size_t expectedCode,
 	uint8_t*& payload,uint32_t& payloadSize) {
 
 	ResponseHeader header;
-	payload = nullptr;
 	uint8_t buff[PACKET_SIZE];
 
 	if (!net.receiveData(buff, PACKET_SIZE)) {
@@ -223,7 +262,7 @@ bool Client::receiveResponse(const size_t expectedCode,
 	if (!validateHeader(header, expectedCode)) 
 		return false;
 	
-	if (header.payloadsize = 0)
+	if (header.payloadsize == 0)
 		return true;
 
 	payloadSize = header.payloadsize;
@@ -268,6 +307,28 @@ void Client::hexify(const unsigned char* buffer, unsigned int length) {
 	std::cout.flags(f);
 }
 
+int Client::char2int(char input)
+{
+	if (input >= '0' && input <= '9')
+		return input - '0';
+	if (input >= 'A' && input <= 'F')
+		return input - 'A' + 10;
+	if (input >= 'a' && input <= 'f')
+		return input - 'a' + 10;
+	throw std::invalid_argument("Invalid input string");
+}
+
+// This function assumes src to be a zero terminated sanitized string with
+// an even number of [0-9a-f] characters, and target to be sufficiently large
+void Client::hex2bin(const char* src, char* target)
+{
+	while (*src && src[1])
+	{
+		*(target++) = char2int(*src) * 16 + char2int(src[1]);
+		src += 2;
+	}
+}
+
 bool Client::saveClientInfo() {
 
 	std::fstream file;
@@ -300,25 +361,27 @@ bool Client::saveClientInfo() {
 bool Client::parseClientInfo() {
 
 	std::fstream file;
-	if (fileHandler.openFile(file, INFO_FILE, false)) {
+	if (!fileHandler.openFile(file, INFO_FILE, false)) {
 		std::cerr << "Failed to open info file " << INFO_FILE << " for reading" << std::endl;
 		return false;
  	}
 	
-	if (fileHandler.readLine(file, username)) {
+	if (!fileHandler.readLine(file, username)) {
 		std::cerr << "Failed to read info file " << INFO_FILE << std::endl;
 		return false;
 	}
 
-	std::string id;
-	if (fileHandler.readLine(file, id)) {
+	std::string idhex;
+	if (!fileHandler.readLine(file, idhex)) {
 		std::cerr << "Failed to read info file " << INFO_FILE << std::endl;
 		return false;
 	}
-	memcpy(clientID, id.c_str(), UUID_SIZE);
+	char id[UUID_SIZE];
+	hex2bin(idhex.c_str(), id);
+	memcpy(clientID, id, UUID_SIZE);
 
 	std::string key;
-	if(fileHandler.readLine(file, key)) {
+	if(!fileHandler.readLine(file, key)) {
 		std::cerr << "Failed to read info file " << INFO_FILE << std::endl;
 		return false;
 	}
@@ -335,7 +398,7 @@ bool Client::sendFile() {
 	CRCRequest reqCrc = CRCRequest();
 	
 	memcpy(req.header.clientID, clientID, UUID_SIZE);
-	std::string filename = fileHandler.extractFileName(filePath).c_str();
+	std::string filename = fileHandler.extractFileName(filePath);
 	memcpy(req.fileName, filename.c_str(), filename.size());
 	memcpy(reqCrc.header.clientID, clientID, UUID_SIZE);
 	memcpy(reqCrc.fileName, filename.c_str(), filename.size());
@@ -354,6 +417,8 @@ bool Client::sendFile() {
 		return false;
 	}
 	file.close();
+	std::cout << static_cast<int>(filesize) << std::endl;
+	std::cout << reinterpret_cast<char*>(filecontent) << std::endl;
 	AESWrapper aes(reinterpret_cast<const unsigned char*>(aesKey), AESKEY_SIZE);
 	std::string encryptedFileContent = aes.encrypt(
 		reinterpret_cast<const char*>(filecontent), filesize);
@@ -361,11 +426,12 @@ bool Client::sendFile() {
 	req.contentSize = encryptedFileContent.size();
 	req.header.payloadSize = sizeof(req.contentSize) + NAME_SIZE + req.contentSize;
 	req.message = new uint8_t[req.contentSize];
-	memcpy(req.message, encryptedFileContent.c_str(), sizeof(req.message));
+	memcpy(req.message, encryptedFileContent.c_str(), req.contentSize);
 	size_t trys = 0;
 	bool success = false;
 
 	do {
+		std::cout << "Attempt number " << trys + 1 << " of sending the encrypted file" << std::endl;
 		if (!net.sendData(reinterpret_cast<const uint8_t* const>(&req), sizeof(req))) {
 			std::cerr << "Failed to send request to server" << std::endl;
 			return false;

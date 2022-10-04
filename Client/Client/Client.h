@@ -29,7 +29,10 @@ class Client
 	bool validateHeader(const ResponseHeader&, const size_t);
 	bool sendPublicKey();
 	bool receiveResponse(const size_t, uint8_t*&, uint32_t&);
+	bool receiveResponse(PublicKeyResponse&);
 	void hexify(const unsigned char*, unsigned int);
+	int char2int(char);
+	void hex2bin(const char*, char*);
 	bool validateId(uint8_t*);
 	bool saveClientInfo();
 	bool parseClientInfo();

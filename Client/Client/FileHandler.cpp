@@ -59,9 +59,7 @@ bool FileHandler::writeHex(std::fstream& file, const unsigned char* buffer, unsi
 size_t FileHandler::readFromFile(std::fstream& file, uint8_t* buff, uint32_t bytes) {
 
 	try {
-		file.read(reinterpret_cast<char*>(buff), bytes);
-		std::streamsize bytes = file.gcount();
-		return static_cast<size_t>(bytes);;
+		return static_cast<size_t>(file.read(reinterpret_cast<char*>(buff), bytes).gcount());
 	}
 	catch (std::exception&) {
 		return 0;

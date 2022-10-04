@@ -11,7 +11,7 @@
 
 const size_t CODE_RES_REGISTER = 2100;
 const size_t CODE_REQ_REGISTER = 1100;
-const size_t CODE_ERROR = -1;
+const size_t CODE_ERROR = 2101;
 const size_t CODE_REQ_RES = 1101;
 const size_t CODE_REQ_FILE = 1103;
 const size_t CODE_REQ_CRC_VALID = 1104;

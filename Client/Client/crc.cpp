@@ -95,6 +95,8 @@ uint32_t CRC::calcCrc(std::fstream& file)
 	uint32_t crc = digest();
 	std::cout << crc << std::endl;
 	delete[] buf;
+	file.clear();
+	file.seekg(0);
 	return crc;
 }
 
