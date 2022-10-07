@@ -12,12 +12,13 @@
 
 #define INFO_FILE "me.info"
 #define TRANSFER_FILE "transfer.info"
+#define FILES_FOLDER "Files To Send\\"
 
 class Client
 {
 	uint8_t clientID[UUID_SIZE];
 	std::string username;
-	std::string filePath;
+	std::string filePath = FILES_FOLDER;
 	uint8_t publicKey[PUBLIC_KEY_SIZE];
 	std::string privateKey;
 	uint8_t aesKey[AESKEY_SIZE];

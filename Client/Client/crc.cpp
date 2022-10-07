@@ -65,10 +65,15 @@ CRC::CRC()
 
 void CRC::update(char* buf, uint32_t size) {
 	uint32_t crc_local = this->crc;
-
 	for (uint32_t i = 0; i < size; i++)
 	{
-		crc_local = crctab[(crc_local >> 24) ^ buf[i]] ^ ((crc_local << 8) & 0xFFFFFFFF);
+		uint8_t bufnum = buf[i];
+		uint32_t x = (crc_local >> 24);
+		uint32_t pos = x ^ bufnum;
+		uint32_t x1 = crctab[pos];
+		uint32_t x2 = ((crc_local << 8) & 0xFFFFFFFF);
+		crc_local = x1 ^ x2;
+		//crc_local = crctab[(crc_local >> 24) ^ buf[i]] ^ ((crc_local << 8) & 0xFFFFFFFF);
 	}
 	this->crc = crc_local;
 	this->nchar += size;
@@ -86,17 +91,19 @@ uint32_t CRC::digest() {
 	return ~crc_local;
 }
 
-uint32_t CRC::calcCrc(std::fstream& file)
+uint32_t CRC::calcCrc(std::string filepath)
 {
+	std::fstream file;
+	if (!fh->openFile(file, filepath, false)) 
+		return 0;
 	uint8_t* buf = new uint8_t[4098];
-	uint32_t extracted = 0 ;
-	while (extracted = fh->readFromFile(file, buf, 4098)) 
+	uint32_t extracted = 0;
+	while (extracted = fh->readFromFile(file, buf, 4098))
 		this->update(reinterpret_cast<char*>(buf), extracted);
 	uint32_t crc = digest();
 	std::cout << crc << std::endl;
 	delete[] buf;
-	file.clear();
-	file.seekg(0);
+	file.close();
 	return crc;
 }
 

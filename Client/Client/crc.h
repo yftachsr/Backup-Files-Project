@@ -13,5 +13,5 @@ public:
 	~CRC() { delete fh; }
 	void update(char*, uint32_t);
 	uint32_t digest();
-	uint32_t calcCrc(std::fstream&);
+	uint32_t calcCrc(std::string);
 };

@@ -16,7 +16,7 @@ class Database:
         self.name = name
 
         self.executeScript(f"""
-            CREATE TABLE {Database.CLIENTS_TABLE}(
+            CREATE TABLE IF NOT EXISTS {Database.CLIENTS_TABLE}(
                 ID TEXT NOT NULL PRIMARY KEY,
                 Name TEXT NOT NULL,
                 PublicKey TEXT,
@@ -25,12 +25,12 @@ class Database:
         """)
 
         self.executeScript(f"""
-            CREATE TABLE {Database.FILES_TABLE}(
+            CREATE TABLE IF NOT EXISTS {Database.FILES_TABLE}(
                 ID TEXT NOT NULL,
                 FileName TEXT NOT NULL,
                 PathName TEXT NOT NULL,
                 Verified INTEGER,
-                PRIMARY KEY (ID, FileName) 
+                PRIMARY KEY (ID, FileName));
         """)
 
     def connect(self):
@@ -43,8 +43,8 @@ class Database:
         try:
             conn.executescript(script)
             conn.commit()
-        except:
-            pass
+        except Exception as e:
+            print(e)
         conn.close()
 
     def executeQuery(self, query, args, commit=False):

@@ -75,7 +75,7 @@ struct FileRequest {
 	uint8_t fileName[NAME_SIZE];
 	uint8_t* message;
 	FileRequest() : header(CODE_REQ_FILE), contentSize(0),
-		fileName{'\0'}, message(nullptr) {}
+		fileName{'\0'}{}//, message(nullptr) {}
 	~FileRequest() { delete[] message; }
 };
 

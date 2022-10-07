@@ -7,11 +7,10 @@ import uuid
 import Crypto.Cipher
 import Crypto.Random
 import Crypto.Cipher.AES
-import Crypto.Util
+from Crypto.Util.Padding import unpad
 from Crypto.Cipher import PKCS1_OAEP
 import os
 import crc
-
 
 PACKET_SIZE = 1024
 CODE_REQ_REGISTER = 1100
@@ -86,14 +85,14 @@ class FileResponse:  # Didn't include Content Size because it makes no sense
         self.header = ResponseHeader(CODE_RES_FILE_CRC)
         self.clientId = b""
         self.fileName = b""
-        self.cksum = b""
+        self.cksum = 0
 
     def pack(self):
         try:
             data = self.header.pack()
             data += struct.pack(f"<{UUID_SIZE}s", self.clientId)
-            data += struct.pack(f"<{NAME_SIZE}s", bytearray(self.fileName, "utf-8"))
-            data += struct.pack(f"<{CRC_SIZE}s", self.Cksum)
+            data += struct.pack(f"<{NAME_SIZE}s", self.fileName)
+            data += struct.pack(f"<L", self.cksum)
             return data
         except Exception as e:
             print(f"Exception when trying to pack file response: {e}")
@@ -141,7 +140,8 @@ class PublicKeyRequest:
     def unpack(self, payload):
         try:
             self.name = str(struct.unpack(f"<{NAME_SIZE}s", payload[:NAME_SIZE])[0].partition(b'\0')[0].decode("utf-8"))
-            self.publicKey = struct.unpack(f"<{database.PUBLIC_KEY_SIZE}s", payload[NAME_SIZE:NAME_SIZE + database.PUBLIC_KEY_SIZE])[0]
+            self.publicKey = \
+            struct.unpack(f"<{database.PUBLIC_KEY_SIZE}s", payload[NAME_SIZE:NAME_SIZE + database.PUBLIC_KEY_SIZE])[0]
             return True
         except Exception as e:
             print(f"Exception when trying to unpack public key request: {e}")
@@ -154,20 +154,22 @@ class FileRequest:
     def __init__(self, header):
         self.header = header
         self.contentSize = 0
-        self.fileName = b""
+        self.fileName = ""
         self.message = b""
 
     def unpack(self, data):
         try:
             self.contentSize = struct.unpack("<L", data[:CONTENT_SIZE])[0]
-            self.fileName = str(struct.unpack(f"<{NAME_SIZE}s", data[CONTENT_SIZE:CONTENT_SIZE+NAME_SIZE])[0]
+            self.fileName = str(struct.unpack(f"<{NAME_SIZE}s", data[CONTENT_SIZE:CONTENT_SIZE + NAME_SIZE])[0]
                                 .partition(b'\0')[0].decode("utf-8"))
-            self.message = struct.unpack(f"<{self.contentSize}s", data[CONTENT_SIZE+NAME_SIZE:CONTENT_SIZE+NAME_SIZE+ self.contentSize])[0]
+            self.message = struct.unpack(f"<{self.contentSize}s",
+                                         data[CONTENT_SIZE + NAME_SIZE:CONTENT_SIZE + NAME_SIZE + self.contentSize])[0]
+
             return True
         except Exception as e:
             print(f"Exception when trying to unpack file request: {e}")
             self.contentSize = 0
-            self.fileName = b""
+            self.fileName = ""
             self.message = b""
             return False
 
@@ -179,7 +181,8 @@ class CrcRequest:
 
     def unpack(self, data):
         try:
-            self.filename = str(struct.unpack(f"<{NAME_SIZE}s", data[:NAME_SIZE])[0].partition(b'\0')[0].decode("utf-8"))
+            self.filename = str(
+                struct.unpack(f"<{NAME_SIZE}s", data[:NAME_SIZE])[0].partition(b'\0')[0].decode("utf-8"))
             return True
         except Exception as e:
             print(f"Exception when trying to unpack crc request: {e}")
@@ -190,6 +193,7 @@ class CrcRequest:
 class Server:
     DBNAME = "server.db"
     MAX_QUEUE = 5
+    Users_Files_Folder = "Users Files"
 
     def __init__(self, port):
         self.port = port
@@ -203,6 +207,10 @@ class Server:
             CODE_REQ_CRC_FAIL: self.handleCRC,
             CODE_REQ_CRC_RETRY: self.handleCRC
         }
+        try:
+            os.mkdir(f"{Server.Users_Files_Folder}\\")
+        except FileExistsError:
+            pass
 
     def start(self):
         try:
@@ -226,7 +234,7 @@ class Server:
     def accept(self, sock, mask):
         print("Client connected")
         conn, addr = sock.accept()
-        conn.setblocking(True)
+        conn.setblocking(False)
         self.sel.register(conn, selectors.EVENT_READ, self.receiveData)
 
     def receiveData(self, conn, mask):
@@ -241,11 +249,15 @@ class Server:
                 if reqHeader.unpack(data):
                     reqSize = REQUEST_HEADER_SIZE + reqHeader.payloadsize
                     while readenBytes < reqSize:  # Read the rest of the data
-                        bytesNum = PACKET_SIZE
+                        #bytesNum = PACKET_SIZE
                         if PACKET_SIZE > reqSize - readenBytes:  # The number of bytes left is less than a packet
                             bytesNum = reqSize - readenBytes
-                        data += conn.recv(bytesNum)
-                        readenBytes += bytesNum
+                            data += conn.recv(bytesNum)
+                            conn.recv(PACKET_SIZE - bytesNum)
+                            readenBytes += bytesNum
+                        else:
+                            data += conn.recv(PACKET_SIZE)
+                            readenBytes += PACKET_SIZE
                     if reqHeader.code in self.requests.keys():  # Call the right handle function
                         success = self.requests[reqHeader.code](conn, reqHeader, data[REQUEST_HEADER_SIZE:])
                 if not success:
@@ -278,21 +290,23 @@ class Server:
         print(f"Response sent to {conn}")
         return True
 
-    def saveFile(self, name, filename, content):
+    def saveFile(self, name, filename, content, newfile=True):
         """Save client files on the disk"""
         try:
-            os.mkdir(f"{name}\\")
+            os.mkdir(f"{Server.Users_Files_Folder}\\{name}\\")
         except FileExistsError:
             pass
         except:
             return False
         try:
-            f = open(f"{name}\\{filename}", "w+b")
+            if newfile:
+                f = open(f"{Server.Users_Files_Folder}\\{name}\\{filename}", "w+b")
+            else:
+                f = open(f"{Server.Users_Files_Folder}\\{name}\\{filename}", "a+b")
             f.write(content)
             return True
         except Exception as e:
             return False
-
 
     def registerClient(self, conn, header, payload):
         """Handle client registration"""
@@ -311,7 +325,7 @@ class Server:
         if not self.db.saveNewClient(newid, req.name):
             print(f"Client registration failure: client {req.name} couldn't be stored")
             return False
-        print("Client ", req.name, " stored in the data base")
+        print("Client ", req.name, f" registered with id: {newid}")
         res.clientId = newid
         res.header.payloadsize = UUID_SIZE
         return self.sendData(conn, res.pack())
@@ -324,7 +338,6 @@ class Server:
             return False
         from Crypto.PublicKey import RSA
         cipher = PKCS1_OAEP.new(RSA.importKey(publicKey))
-        print("refhedhbedrfeh")
         return cipher.encrypt(key)  # Encrypt the AES key with the clients public key
 
     def calccksum(self, filepath):
@@ -347,11 +360,11 @@ class Server:
         print(f"Public key stored for client {req.name}")
         res.clientId = req.header.id
         aeskey = self.generateAndEncryptAES(req.header.id, req.publicKey)
-        print("1242135345")
         if not aeskey:
             return False
         res.aesKey = aeskey
         res.header.payloadsize = UUID_SIZE + len(aeskey)
+        print(f"Sending client {req.name} symmetric key")
         return self.sendData(conn, res.pack())
 
     def handleFile(self, conn, header, payload):
@@ -361,18 +374,27 @@ class Server:
         if not req.unpack(payload):
             return False
         aeskey = self.db.getAESKey(req.header.id)[0][0]
-        cipher = Crypto.Cipher.AES.new(aeskey, Crypto.Cipher.AES.MODE_CBC, iv=b'\0'*16)
-        clientname = self.db.getClientName(req.header.id)[0][0]
-        filepath = f"{str(clientname, 'utf-8')}\\{req.fileName}"
-        if not self.saveFile(str(clientname, 'utf-8'), req.fileName, cipher.decrypt(req.message)):  # Save to disk
-            print(f"File save error: file {req.fileName} for client {str(clientname, 'utf-8')} couldn't be saved")
+        try:
+            clientname = str(self.db.getClientName(req.header.id)[0][0], 'utf-8')
+        except:
+            print(f"File save error: failed to retrieve name for client {req.header.id}")
             return False
-        if not self.db.saveFile(req.header.id, req.fileName, filepath, 0):  # Save to the database
-            print(f"File save error: file {req.fileName} for client {str(clientname, 'utf-8')} couldn't be saved in the database")
+        if not aeskey:
+            print(f"Flie save error: failed to get AES key for client {clientname} form the database")
             return False
+        cipher = Crypto.Cipher.AES.new(aeskey, Crypto.Cipher.AES.MODE_CBC, iv=b'\0' * 16)
+        filepath = f"{Server.Users_Files_Folder}\\{clientname}\\{req.fileName}"
+        if not self.saveFile(clientname, req.fileName, unpad(cipher.decrypt(req.message), Crypto.Cipher.AES.block_size)):  # Save to disk
+            print(f"File save error: file {req.fileName} for client {clientname} couldn't be saved")
+            return False
+        print(f"File {req.fileName} was saved in the disk under {Server.Users_Files_Folder}\\{clientname}")
+        if not self.db.deleteFile(req.header.id, req.fileName) and not self.db.saveFile(req.header.id, req.fileName, filepath, 0):  # Save to the database
+            print(f"File save error: file {req.fileName} for client {clientname} couldn't be saved in the database")
+            return False
+        print(f"File {req.fileName} was saved in the database for client {clientname}")
         cksum = self.calccksum(filepath)
         res.clientId = req.header.id
-        res.fileName = req.fileName
+        res.fileName = bytes(req.fileName, 'utf-8')
         res.cksum = cksum
         res.header.payloadsize = UUID_SIZE + NAME_SIZE + CRC_SIZE
         return self.sendData(conn, res.pack())
@@ -382,13 +404,18 @@ class Server:
         req = CrcRequest(header)
         if not req.unpack(payload):
             return False
+        try:
+            clientname = str(self.db.getClientName(req.header.id)[0][0], 'utf-8')
+        except:
+            clientname = "(name failure)"
         if req.header.code == CODE_REQ_CRC_VALID:
             if not self.db.setVerified(req.header.id, req.filename, 1):
                 print(f"CRC error: couldn't update verified for file {req.filename} client {req.header.id} in the database")
                 return False
-            return self.sendData(conn, ResponseHeader(CODE_RES_MESSAGE).pack())
-        elif req.header.code == CODE_REQ_CRC_RETRY or req.header.code == CODE_REQ_CRC_FAIL:
+            print(f"CRC for client {clientname} file {req.filename} is valid")
+        else:
             if not self.db.deleteFile(req.header.id, req.filename):
                 print(f"CRC error: couldn't delete the corrupted file {req.filename} for client {req.header.id} from the database")
                 return False
-            return True
+            print(f"CRC calculated for client {clientname} file {req.filename} is incorrect")
+        return self.sendData(conn, ResponseHeader(CODE_RES_MESSAGE).pack())

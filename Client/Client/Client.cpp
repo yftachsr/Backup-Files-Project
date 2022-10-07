@@ -22,6 +22,7 @@ bool Client::start() {
 			return false;
 	}	
 	else {
+		std::cout << "Client already registered in the server" << std::endl;
 		if (!parseClientInfo())
 			return false;
 	}
@@ -78,11 +79,12 @@ bool Client::parseTransferInfo() {
 		return false;
 	}
 
-	if (!fileHandler.fileExists(line)) {
-		std::cerr << "Specified file in " << TRANSFER_FILE << " doesn't exist" << std::endl;
+	if (!fileHandler.fileExists(FILES_FOLDER + line)) {
+		std::cerr << "Specified file in " << TRANSFER_FILE << " doesn't exist in "
+			<< FILES_FOLDER << std::endl;
 		return false;
 	}
-	filePath = line;
+	filePath += line;
 	file.close();
 	return true;
 }
@@ -399,44 +401,58 @@ bool Client::sendFile() {
 	
 	memcpy(req.header.clientID, clientID, UUID_SIZE);
 	std::string filename = fileHandler.extractFileName(filePath);
-	memcpy(req.fileName, filename.c_str(), filename.size());
+	memcpy(req.fileName, filename.c_str(), NAME_SIZE);
 	memcpy(reqCrc.header.clientID, clientID, UUID_SIZE);
-	memcpy(reqCrc.fileName, filename.c_str(), filename.size());
-
+	memcpy(reqCrc.fileName, filename.c_str(), NAME_SIZE);
+	reqCrc.header.payloadSize = NAME_SIZE;
 	std::fstream file;
 	uint32_t filesize = (uint32_t)std::filesystem::file_size(filePath);
 	if (!fileHandler.openFile(file, filePath, false)) {
 		std::cerr << "Failed to open file " << filePath << std::endl;
 		return false;
 	}
-	CRC c = CRC();
-	uint32_t cksum = c.calcCrc(file);
-	uint8_t* filecontent = new uint8_t[filesize];
-	if (!fileHandler.readFromFile(file, filecontent, filesize)) {
+
+	uint8_t* filecon = new uint8_t[filesize];
+	if (!fileHandler.readFromFile(file, filecon, filesize)) {
 		std::cerr << "Failed to read from file " << filePath << std::endl;
 		return false;
 	}
-	file.close();
-	std::cout << static_cast<int>(filesize) << std::endl;
-	std::cout << reinterpret_cast<char*>(filecontent) << std::endl;
+
 	AESWrapper aes(reinterpret_cast<const unsigned char*>(aesKey), AESKEY_SIZE);
 	std::string encryptedFileContent = aes.encrypt(
-		reinterpret_cast<const char*>(filecontent), filesize);
-	delete[] filecontent;
+		reinterpret_cast<const char*>(filecon), filesize);
+
+	// WITH ENCRYPTION
 	req.contentSize = encryptedFileContent.size();
 	req.header.payloadSize = sizeof(req.contentSize) + NAME_SIZE + req.contentSize;
 	req.message = new uint8_t[req.contentSize];
 	memcpy(req.message, encryptedFileContent.c_str(), req.contentSize);
+
+	uint8_t* buff = new uint8_t[req.header.payloadSize + sizeof(req.header)];
+	uint8_t* ptr = buff;
+	memcpy(ptr, &req, sizeof(req.header) + sizeof(req.contentSize) + NAME_SIZE);
+	ptr += sizeof(req.header) + sizeof(req.contentSize) + NAME_SIZE;
+	memcpy(ptr, req.message, req.contentSize);
+
+	CRC c = CRC();
+	uint32_t cksum = c.calcCrc(filePath);
+	if (cksum == 0) {
+		std::cerr << "Couldn't open file " << filePath << " for calculating CRC" << std::endl;
+		delete[] buff;
+		return false;
+	}
 	size_t trys = 0;
 	bool success = false;
 
 	do {
 		std::cout << "Attempt number " << trys + 1 << " of sending the encrypted file" << std::endl;
-		if (!net.sendData(reinterpret_cast<const uint8_t* const>(&req), sizeof(req))) {
+		size_t bytesLeft = filesize;
+
+		if (!net.sendData(buff, req.header.payloadSize + sizeof(req.header))) {
 			std::cerr << "Failed to send request to server" << std::endl;
 			return false;
 		}
-
+		
 		if (!net.receiveData(reinterpret_cast<uint8_t* const>(&res), sizeof(res))) {
 			std::cerr << "Failed to receive response from server" << std::endl;
 			return false;
@@ -444,7 +460,7 @@ bool Client::sendFile() {
 
 		if (!validateHeader(res.header, CODE_RES_FILE_CRC))
 			return false;
-
+		
 		if (res.cksum == cksum) {
 			success = true;
 			reqCrc.header.code = CODE_REQ_CRC_VALID;
@@ -462,22 +478,24 @@ bool Client::sendFile() {
 		if (!net.sendData(reinterpret_cast<const uint8_t* const>(&reqCrc), sizeof(reqCrc))) {
 			std::cerr << "Failed to send request to server" << std::endl;
 			return false;
-		}		
-
-	} while (trys < 3 && !success);
-
-	if (success) {
-		if (!net.receiveData(reinterpret_cast<uint8_t* const>(&res), sizeof(res))) {
+		}
+		ResponseHeader resHeader = ResponseHeader();
+		if (!net.receiveData(reinterpret_cast<uint8_t* const>(&resHeader), sizeof(resHeader))) {
 			std::cerr << "Failed to receive response from server" << std::endl;
 			return false;
 		}
-		if (!validateHeader(res.header, CODE_RES_MESSAGE)) 
+		if (!validateHeader(resHeader, CODE_RES_MESSAGE))
 			return false;
-		std::cout << "File was successfully sent to server" << std::endl;
-	}
-	else {
-		std::cerr << "Attmpted to send the file 3 times unsuccessfully, aborting" << std::endl;
-	}
 
+
+	} while (trys < 3 && !success);
+
+	if (success) 
+		std::cout << "File " << filename << " was stored successfully in the server" << std::endl;
+	else 
+		std::cerr << "Attmpted to send the file 3 times unsuccessfully, aborting" << std::endl;
+
+	delete[] buff;
+	file.close();
 	return true;
 }
