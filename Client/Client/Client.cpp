@@ -79,9 +79,8 @@ bool Client::parseTransferInfo() {
 		return false;
 	}
 
-	if (!fileHandler.fileExists(FILES_FOLDER + line)) {
-		std::cerr << "Specified file in " << TRANSFER_FILE << " doesn't exist in "
-			<< FILES_FOLDER << std::endl;
+	if (!fileHandler.fileExists(line)) {
+		std::cerr << "Specified file in " << TRANSFER_FILE << " doesn't exist" << std::endl;
 		return false;
 	}
 	filePath += line;

@@ -388,7 +388,10 @@ class Server:
             print(f"File save error: file {req.fileName} for client {clientname} couldn't be saved")
             return False
         print(f"File {req.fileName} was saved in the disk under {Server.Users_Files_Folder}\\{clientname}")
-        if not self.db.deleteFile(req.header.id, req.fileName) and not self.db.saveFile(req.header.id, req.fileName, filepath, 0):  # Save to the database
+        if not self.db.deleteFile(req.header.id, req.fileName):
+            print(f"File save error: file {req.fileName} for client {clientname} couldn't be saved in the database")
+            return False
+        if not self.db.saveFile(req.header.id, req.fileName, filepath, 0):  # Save to the database
             print(f"File save error: file {req.fileName} for client {clientname} couldn't be saved in the database")
             return False
         print(f"File {req.fileName} was saved in the database for client {clientname}")
