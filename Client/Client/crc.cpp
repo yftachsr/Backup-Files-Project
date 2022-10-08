@@ -101,7 +101,6 @@ uint32_t CRC::calcCrc(std::string filepath)
 	while (extracted = fh->readFromFile(file, buf, 4098))
 		this->update(reinterpret_cast<char*>(buf), extracted);
 	uint32_t crc = digest();
-	std::cout << crc << std::endl;
 	delete[] buf;
 	file.close();
 	return crc;

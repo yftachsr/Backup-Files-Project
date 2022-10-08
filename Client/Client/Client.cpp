@@ -1,5 +1,7 @@
 #include "Client.h"
 
+/* Place files to send in the same folder of .cpp and .h files*/
+
 Client::Client() {
 	net = Networking();
 }
@@ -10,7 +12,7 @@ Client::~Client() {
 
 bool Client::start() {
 
-	if (!parseTransferInfo())
+	if (!parseTransferInfo()) // Get server ip and port, username and file name to send
 		return false;
 	bool infoExists = fileHandler.fileExists(INFO_FILE);
 
@@ -23,7 +25,7 @@ bool Client::start() {
 	}	
 	else {
 		std::cout << "Client already registered in the server" << std::endl;
-		if (!parseClientInfo())
+		if (!parseClientInfo()) // Get username, id and public key
 			return false;
 	}
 	
@@ -89,6 +91,8 @@ bool Client::parseTransferInfo() {
 }
 
 bool Client::extractIPPort(std::string str, std::string& addr, uint16_t& port) {
+
+	const int minPort = 1, maxPort = 65535;
 	size_t pos = str.find(':');
 	if (pos == std::string::npos) {
 		std::cerr << "Invalid ip port format: missing ':'" << std::endl;
@@ -96,7 +100,12 @@ bool Client::extractIPPort(std::string str, std::string& addr, uint16_t& port) {
 	}
 	addr = str.substr(0, pos);
 	try {
-		port = std::stoi(str.substr(pos + 1));
+		int portCheck = std::stoi(str.substr(pos + 1));
+		if (portCheck < 1 || portCheck > maxPort) {
+			std::cerr << "Invalid port" << std::endl;
+			return false;
+		}
+		port = portCheck;
 		std::cout << addr << ":" << std::stoi(str.substr(pos + 1)) << std::endl;
 	}
 	catch (std::exception&) {
@@ -319,8 +328,6 @@ int Client::char2int(char input)
 	throw std::invalid_argument("Invalid input string");
 }
 
-// This function assumes src to be a zero terminated sanitized string with
-// an even number of [0-9a-f] characters, and target to be sufficiently large
 void Client::hex2bin(const char* src, char* target)
 {
 	while (*src && src[1])
@@ -419,9 +426,9 @@ bool Client::sendFile() {
 
 	AESWrapper aes(reinterpret_cast<const unsigned char*>(aesKey), AESKEY_SIZE);
 	std::string encryptedFileContent = aes.encrypt(
-		reinterpret_cast<const char*>(filecon), filesize);
+		reinterpret_cast<const char*>(filecon), filesize); // encrypt file content
 
-	// WITH ENCRYPTION
+	
 	req.contentSize = encryptedFileContent.size();
 	req.header.payloadSize = sizeof(req.contentSize) + NAME_SIZE + req.contentSize;
 	req.message = new uint8_t[req.contentSize];
@@ -440,6 +447,7 @@ bool Client::sendFile() {
 		delete[] buff;
 		return false;
 	}
+	std::cout << "Cksum calculated: " << cksum << std::endl;
 	size_t trys = 0;
 	bool success = false;
 
@@ -490,7 +498,7 @@ bool Client::sendFile() {
 	} while (trys < 3 && !success);
 
 	if (success) 
-		std::cout << "File " << filename << " was stored successfully in the server" << std::endl;
+		std::cout << "File " << filename << " was successfully stored in the server" << std::endl;
 	else 
 		std::cerr << "Attmpted to send the file 3 times unsuccessfully, aborting" << std::endl;
 

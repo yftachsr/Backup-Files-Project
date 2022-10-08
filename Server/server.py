@@ -9,6 +9,7 @@ import Crypto.Random
 import Crypto.Cipher.AES
 from Crypto.Util.Padding import unpad
 from Crypto.Cipher import PKCS1_OAEP
+from Crypto.PublicKey import RSA
 import os
 import crc
 
@@ -140,8 +141,7 @@ class PublicKeyRequest:
     def unpack(self, payload):
         try:
             self.name = str(struct.unpack(f"<{NAME_SIZE}s", payload[:NAME_SIZE])[0].partition(b'\0')[0].decode("utf-8"))
-            self.publicKey = \
-            struct.unpack(f"<{database.PUBLIC_KEY_SIZE}s", payload[NAME_SIZE:NAME_SIZE + database.PUBLIC_KEY_SIZE])[0]
+            self.publicKey = struct.unpack(f"<{database.PUBLIC_KEY_SIZE}s", payload[NAME_SIZE:NAME_SIZE + database.PUBLIC_KEY_SIZE])[0]
             return True
         except Exception as e:
             print(f"Exception when trying to unpack public key request: {e}")
@@ -208,7 +208,7 @@ class Server:
             CODE_REQ_CRC_RETRY: self.handleCRC
         }
         try:
-            os.mkdir(f"{Server.Users_Files_Folder}\\")
+            os.mkdir(f"{Server.Users_Files_Folder}\\")  # Create folder for files sent from clients
         except FileExistsError:
             pass
 
@@ -234,7 +234,7 @@ class Server:
     def accept(self, sock, mask):
         print("Client connected")
         conn, addr = sock.accept()
-        conn.setblocking(False)
+        conn.setblocking(True)
         self.sel.register(conn, selectors.EVENT_READ, self.receiveData)
 
     def receiveData(self, conn, mask):
@@ -249,11 +249,10 @@ class Server:
                 if reqHeader.unpack(data):
                     reqSize = REQUEST_HEADER_SIZE + reqHeader.payloadsize
                     while readenBytes < reqSize:  # Read the rest of the data
-                        #bytesNum = PACKET_SIZE
                         if PACKET_SIZE > reqSize - readenBytes:  # The number of bytes left is less than a packet
                             bytesNum = reqSize - readenBytes
                             data += conn.recv(bytesNum)
-                            conn.recv(PACKET_SIZE - bytesNum)
+                            conn.recv(PACKET_SIZE - bytesNum)  # junk bytes
                             readenBytes += bytesNum
                         else:
                             data += conn.recv(PACKET_SIZE)
@@ -293,16 +292,16 @@ class Server:
     def saveFile(self, name, filename, content, newfile=True):
         """Save client files on the disk"""
         try:
-            os.mkdir(f"{Server.Users_Files_Folder}\\{name}\\")
+            os.mkdir(f"{Server.Users_Files_Folder}\\{name}\\")  # Create a folder for the clients files
         except FileExistsError:
             pass
         except:
             return False
         try:
             if newfile:
-                f = open(f"{Server.Users_Files_Folder}\\{name}\\{filename}", "w+b")
+                f = open(f"{Server.Users_Files_Folder}\\{name}\\{filename}", "w+b")  # Overwrite the file
             else:
-                f = open(f"{Server.Users_Files_Folder}\\{name}\\{filename}", "a+b")
+                f = open(f"{Server.Users_Files_Folder}\\{name}\\{filename}", "a+b")  # Append to the file
             f.write(content)
             return True
         except Exception as e:
@@ -319,7 +318,7 @@ class Server:
                 print(f"Client registration failure: username {req.name} already exists")
                 return False
         except:
-            print(f"Client registration failure: failed to connect to the database")
+            print("Client registration failure: failed to connect to the database")
             return False
         newid = uuid.uuid4().bytes
         if not self.db.saveNewClient(newid, req.name):
@@ -336,7 +335,6 @@ class Server:
         if not self.db.setAESKey(id, key):  # Save the AES key in the database
             print("Couldn't save the AES key in the database")
             return False
-        from Crypto.PublicKey import RSA
         cipher = PKCS1_OAEP.new(RSA.importKey(publicKey))
         return cipher.encrypt(key)  # Encrypt the AES key with the clients public key
 
@@ -373,14 +371,18 @@ class Server:
         res = FileResponse()
         if not req.unpack(payload):
             return False
-        aeskey = self.db.getAESKey(req.header.id)[0][0]
+        try:
+            aeskey = self.db.getAESKey(req.header.id)[0][0]
+        except:
+            print(f"AES key wasn't found in the database for client {req.header.id}")
+            return False
         try:
             clientname = str(self.db.getClientName(req.header.id)[0][0], 'utf-8')
         except:
             print(f"File save error: failed to retrieve name for client {req.header.id}")
             return False
         if not aeskey:
-            print(f"Flie save error: failed to get AES key for client {clientname} form the database")
+            print(f"File save error: failed to get AES key for client {clientname} form the database")
             return False
         cipher = Crypto.Cipher.AES.new(aeskey, Crypto.Cipher.AES.MODE_CBC, iv=b'\0' * 16)
         filepath = f"{Server.Users_Files_Folder}\\{clientname}\\{req.fileName}"
@@ -388,10 +390,7 @@ class Server:
             print(f"File save error: file {req.fileName} for client {clientname} couldn't be saved")
             return False
         print(f"File {req.fileName} was saved in the disk under {Server.Users_Files_Folder}\\{clientname}")
-        if not self.db.deleteFile(req.header.id, req.fileName):
-            print(f"File save error: file {req.fileName} for client {clientname} couldn't be saved in the database")
-            return False
-        if not self.db.saveFile(req.header.id, req.fileName, filepath, 0):  # Save to the database
+        if not self.db.deleteFile(req.header.id, req.fileName) or not self.db.saveFile(req.header.id, req.fileName, filepath, 0):  # Save to the database
             print(f"File save error: file {req.fileName} for client {clientname} couldn't be saved in the database")
             return False
         print(f"File {req.fileName} was saved in the database for client {clientname}")
